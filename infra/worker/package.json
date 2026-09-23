@@ -1,0 +1,13 @@
+{
+  "name": "agropulse-worker",
+  "version": "1.0.0",
+  "description": "Worker consumidor que persiste lecturas IoT en Supabase y procesa comandos de riego",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

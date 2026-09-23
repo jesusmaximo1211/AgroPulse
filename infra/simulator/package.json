@@ -1,0 +1,12 @@
+{
+  "name": "agropulse-simulator",
+  "version": "1.0.0",
+  "description": "Simulador IoT que genera lecturas de sensores y publica en Redpanda/Kafka",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  }
+}

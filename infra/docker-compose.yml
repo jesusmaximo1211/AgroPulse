@@ -1,0 +1,93 @@
+# ============================================================================
+# AgroPulse — Docker Compose
+# Servicios: Redpanda (Kafka-compatible) + Simulador IoT + Worker Consumidor
+# ============================================================================
+
+
+services:
+  # --------------------------------------------------------------------------
+  # Redpanda: Broker Kafka-compatible, ligero, sin necesidad de Zookeeper
+  # --------------------------------------------------------------------------
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    container_name: agropulse-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --schema-registry-addr=internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --pandaproxy-addr=internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr=internal://redpanda:8082,external://localhost:18082
+    ports:
+      - "19092:19092"   # Kafka API (externo)
+      - "18081:18081"   # Schema Registry (externo)
+      - "18082:18082"   # HTTP Proxy (externo)
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Init: Crea los topics necesarios al arrancar
+  # --------------------------------------------------------------------------
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    container_name: agropulse-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: >
+      -c "
+        rpk topic create sensor-readings --brokers redpanda:9092 -p 3 || true;
+        rpk topic create irrigation-commands --brokers redpanda:9092 -p 1 || true;
+        echo '✅ Topics creados exitosamente';
+      "
+
+  # --------------------------------------------------------------------------
+  # Simulador IoT: Genera lecturas de sensores y publica en Redpanda
+  # --------------------------------------------------------------------------
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: agropulse-simulator
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKERS: "redpanda:9092"
+      TOPIC_READINGS: "sensor-readings"
+      TICK_INTERVAL_MS: "10000"
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  # Worker: Consume eventos de Redpanda y persiste en Supabase
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: agropulse-worker
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BROKERS: "redpanda:9092"
+      TOPIC_READINGS: "sensor-readings"
+      TOPIC_COMMANDS: "irrigation-commands"
+      SUPABASE_URL: "${SUPABASE_URL}"
+      SUPABASE_SERVICE_KEY: "${SUPABASE_SERVICE_KEY}"
+    restart: unless-stopped
+
+volumes:
+  redpanda_data:
