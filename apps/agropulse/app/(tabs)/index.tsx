@@ -6,10 +6,10 @@
  * para detectar si el usuario está dentro de un lote (Point-in-Polygon).
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert as RNAlert } from 'react-native';
 import { useRouter } from 'expo-router';
-import MapView, { Polygon, Region } from 'react-native-maps';
+import MapView, { Polygon, Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 
 import { supabase } from '@/lib/supabase';
@@ -24,12 +24,12 @@ interface PlotData extends Plot {
   coordinates: Coordinate[];
 }
 
-// Centro por defecto: Concordia, Entre Ríos
+// Centro por defecto: Concordia, Entre Ríos (centrado sobre los 3 lotes)
 const DEFAULT_REGION: Region = {
-  latitude: -31.3930,
-  longitude: -58.0170,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
+  latitude: -31.3825,
+  longitude: -58.0275,
+  latitudeDelta: 0.03,
+  longitudeDelta: 0.03,
 };
 
 export default function MapScreen() {
@@ -44,6 +44,19 @@ export default function MapScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [currentPlotId, setCurrentPlotId] = useState<string | null>(null);
+
+  // Ajustar la cámara para mostrar todos los polígonos
+  const fitPlotsOnMap = useCallback((plotList: PlotData[]) => {
+    if (plotList.length > 0 && mapRef.current) {
+      const allCoords = plotList.flatMap(p => p.coordinates);
+      if (allCoords.length > 0) {
+        mapRef.current.fitToCoordinates(allCoords, {
+          edgePadding: { top: 70, right: 70, bottom: 70, left: 70 },
+          animated: true,
+        });
+      }
+    }
+  }, []);
 
   // 1. Cargar lotes
   const loadPlots = async () => {
@@ -91,16 +104,10 @@ export default function MapScreen() {
 
       setPlots(enrichedPlots);
       
-      // Ajustar la cámara si hay polígonos
-      if (enrichedPlots.length > 0 && mapRef.current) {
-        const allCoords = enrichedPlots.flatMap(p => p.coordinates);
-        if (allCoords.length > 0) {
-          mapRef.current.fitToCoordinates(allCoords, {
-            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-            animated: true,
-          });
-        }
-      }
+      // Ajustar cámara con un leve retardo para asegurar que MapView esté listo
+      setTimeout(() => {
+        fitPlotsOnMap(enrichedPlots);
+      }, 400);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error cargando lotes');
     } finally {
@@ -168,7 +175,6 @@ export default function MapScreen() {
   // Centrar en usuario
   const centerOnUser = async () => {
     if (!location && !locationError) {
-      // Intentar obtener de nuevo
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         let loc = await Location.getCurrentPositionAsync({});
@@ -188,6 +194,11 @@ export default function MapScreen() {
         longitudeDelta: 0.01,
       });
     }
+  };
+
+  // Centrar en los lotes
+  const centerOnPlots = () => {
+    fitPlotsOnMap(plots);
   };
 
   if (loading && plots.length === 0) {
@@ -231,8 +242,13 @@ export default function MapScreen() {
         style={styles.map}
         initialRegion={DEFAULT_REGION}
         showsUserLocation={true}
-        showsMyLocationButton={false} // Usamos nuestro FAB custom
+        showsMyLocationButton={false}
         mapType="satellite"
+        onMapReady={() => {
+          if (plots.length > 0) {
+            fitPlotsOnMap(plots);
+          }
+        }}
       >
         {plots.map((plot) => {
           const latestReading = plot.stations
@@ -245,16 +261,33 @@ export default function MapScreen() {
             threshold_max: plot.threshold_max,
           });
 
+          const centerCoord = plot.coordinates.length > 0 ? {
+            latitude: plot.coordinates.reduce((sum, c) => sum + c.latitude, 0) / plot.coordinates.length,
+            longitude: plot.coordinates.reduce((sum, c) => sum + c.longitude, 0) / plot.coordinates.length,
+          } : DEFAULT_REGION;
+
           return (
-            <Polygon
-              key={plot.id}
-              coordinates={plot.coordinates}
-              fillColor={STATUS_FILL_COLORS[status]}
-              strokeColor={STATUS_COLORS[status]}
-              strokeWidth={2}
-              tappable
-              onPress={() => router.push(`/(tabs)/plots/${plot.id}`)}
-            />
+            <React.Fragment key={plot.id}>
+              <Polygon
+                coordinates={plot.coordinates}
+                fillColor={STATUS_FILL_COLORS[status]}
+                strokeColor={STATUS_COLORS[status]}
+                strokeWidth={3}
+                tappable
+                onPress={() => router.push(`/(tabs)/plots/${plot.id}`)}
+              />
+              <Marker
+                coordinate={centerCoord}
+                title={plot.name}
+                description={`Humedad: ${latestReading ? `${latestReading.moisture_pct}%` : 'Sin datos'} • ${getStatusLabel(status)}`}
+                onCalloutPress={() => router.push(`/(tabs)/plots/${plot.id}`)}
+              >
+                <View style={[styles.plotMarkerBadge, { borderColor: STATUS_COLORS[status] }]}>
+                  <Text style={styles.plotMarkerIcon}>{getStatusIcon(status)}</Text>
+                  <Text style={styles.plotMarkerText}>{plot.name}</Text>
+                </View>
+              </Marker>
+            </React.Fragment>
           );
         })}
       </MapView>
@@ -270,10 +303,15 @@ export default function MapScreen() {
         ))}
       </View>
 
-      {/* FAB: Mi ubicación */}
-      <TouchableOpacity style={styles.fabLocation} onPress={centerOnUser}>
-        <Text style={styles.fabIcon}>📍</Text>
-      </TouchableOpacity>
+      {/* FABs de navegación */}
+      <View style={styles.fabContainer}>
+        <TouchableOpacity style={styles.fabButton} onPress={centerOnPlots} activeOpacity={0.8}>
+          <Text style={styles.fabIcon}>🌾</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.fabButton} onPress={centerOnUser} activeOpacity={0.8}>
+          <Text style={styles.fabIcon}>📍</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -300,11 +338,35 @@ const styles = StyleSheet.create({
 
   map: { flex: 1 },
 
+  plotMarkerBadge: {
+    backgroundColor: 'rgba(20, 30, 20, 0.90)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  plotMarkerIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  plotMarkerText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
   legendFloat: {
     position: 'absolute',
     top: 60,
     left: 16,
-    backgroundColor: 'rgba(30,30,30,0.85)',
+    backgroundColor: 'rgba(20,30,20,0.90)',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
@@ -315,23 +377,27 @@ const styles = StyleSheet.create({
   legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
   legendLabel: { color: '#CCC', fontSize: 11 },
 
-  fabLocation: {
+  fabContainer: {
     position: 'absolute',
     bottom: 24,
-    right: 24,
+    right: 20,
+    flexDirection: 'column',
+    gap: 12,
+  },
+  fabButton: {
     backgroundColor: COLORS.card,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  fabIcon: { fontSize: 24 },
+  fabIcon: { fontSize: 22 },
 });

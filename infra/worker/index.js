@@ -17,6 +17,7 @@
 
 const { Kafka } = require("kafkajs");
 const { createClient } = require("@supabase/supabase-js");
+const WebSocket = require("ws");
 
 // ---------------------------------------------------------------------------
 // Configuración
@@ -35,6 +36,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 // Cliente Supabase con service_role (bypass RLS)
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
+  realtime: {
+    transport: WebSocket,
+  },
 });
 
 // Cache de umbrales por estación para evitar queries repetidas

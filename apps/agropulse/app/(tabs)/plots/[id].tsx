@@ -170,20 +170,29 @@ export default function PlotDetailScreen() {
     );
   };
 
-  const handleAdjustThreshold = async (delta: number) => {
+  const handleAdjustThreshold = async (type: 'min' | 'max', delta: number) => {
     if (!canCommand || !plot) return;
-    const newMin = Math.max(0, Math.min(100, plot.threshold_min + delta));
-    if (newMin >= plot.threshold_max) return; // Validación básica
+    
+    let newMin = plot.threshold_min;
+    let newMax = plot.threshold_max;
+
+    if (type === 'min') {
+      newMin = Math.max(0, Math.min(100, plot.threshold_min + delta));
+      if (newMin >= newMax) return; // Validación básica
+    } else {
+      newMax = Math.max(0, Math.min(100, plot.threshold_max + delta));
+      if (newMax <= newMin) return;
+    }
 
     const { error } = await supabase
       .from('plots')
-      .update({ threshold_min: newMin })
+      .update({ threshold_min: newMin, threshold_max: newMax })
       .eq('id', plot.id);
 
     if (error) {
       RNAlert.alert('Error actualizando umbral', error.message);
     } else {
-      setPlot({ ...plot, threshold_min: newMin });
+      setPlot({ ...plot, threshold_min: newMin, threshold_max: newMax });
     }
   };
 
@@ -240,13 +249,23 @@ export default function PlotDetailScreen() {
             Umbrales: {plot.threshold_min}% — {plot.threshold_max}%
           </Text>
           {canCommand && (
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 5 }}>
-              <TouchableOpacity onPress={() => handleAdjustThreshold(-5)} style={styles.thresholdBtn}>
-                <Text style={styles.thresholdBtnText}>-5% Mínimo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleAdjustThreshold(5)} style={styles.thresholdBtn}>
-                <Text style={styles.thresholdBtnText}>+5% Mínimo</Text>
-              </TouchableOpacity>
+            <View style={{ gap: 8, marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'center' }}>
+                <TouchableOpacity onPress={() => handleAdjustThreshold('min', -5)} style={styles.thresholdBtn}>
+                  <Text style={styles.thresholdBtnText}>-5% Mínimo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleAdjustThreshold('min', 5)} style={styles.thresholdBtn}>
+                  <Text style={styles.thresholdBtnText}>+5% Mínimo</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'center' }}>
+                <TouchableOpacity onPress={() => handleAdjustThreshold('max', -5)} style={styles.thresholdBtn}>
+                  <Text style={styles.thresholdBtnText}>-5% Máximo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleAdjustThreshold('max', 5)} style={styles.thresholdBtn}>
+                  <Text style={styles.thresholdBtnText}>+5% Máximo</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </View>

@@ -17,10 +17,10 @@ export const STATUS_COLORS: Record<PlotStatusType, string> = {
 
 /** Colores con transparencia para polígonos del mapa (fill) */
 export const STATUS_FILL_COLORS: Record<PlotStatusType, string> = {
-  stale: 'rgba(120, 144, 156, 0.25)',
-  dry: 'rgba(239, 83, 80, 0.30)',
-  optimal: 'rgba(102, 187, 106, 0.30)',
-  wet: 'rgba(66, 165, 245, 0.30)',
+  stale: 'rgba(120, 144, 156, 0.40)',
+  dry: 'rgba(239, 83, 80, 0.45)',
+  optimal: 'rgba(102, 187, 106, 0.45)',
+  wet: 'rgba(66, 165, 245, 0.45)',
 };
 
 /** Colores de fondo para badges/cards */
